@@ -73,6 +73,19 @@ DEFAULT_MODEL_URL = "https://ml-site.cdn-apple.com/models/sharp/sharp_2572gikvuh
     help="Device to run on. ['cpu', 'mps', 'cuda']",
 )
 @click.option("-v", "--verbose", is_flag=True, help="Activate debug logs.")
+@click.option(
+    "--cull-transparent/--no-cull-transparent",
+    "cull_transparent",
+    is_flag=True,
+    default=True,
+    help="Remove splats with opacity below threshold (default: enabled).",
+)
+@click.option(
+    "--opacity-threshold",
+    type=float,
+    default=1e-3,
+    help="Minimum opacity threshold for culling transparent splats (default: 0.001).",
+)
 def predict_cli(
     input_path: Path,
     output_path: Path,
@@ -80,6 +93,8 @@ def predict_cli(
     with_rendering: bool,
     device: str,
     verbose: bool,
+    cull_transparent: bool,
+    opacity_threshold: float,
 ):
     """Predict Gaussians from input images."""
     logging_utils.configure(logging.DEBUG if verbose else logging.INFO)
@@ -142,7 +157,15 @@ def predict_cli(
             device=device,
             dtype=torch.float32,
         )
-        gaussians = predict_image(gaussian_predictor, image, alpha, f_px, torch.device(device))
+        gaussians = predict_image(
+            gaussian_predictor,
+            image,
+            alpha,
+            f_px,
+            torch.device(device),
+            cull_transparent=cull_transparent,
+            opacity_threshold=opacity_threshold,
+        )
 
         LOGGER.info("Saving 3DGS to %s", output_path)
         save_ply(gaussians, f_px, (height, width), output_path / f"{image_path.stem}.ply")
@@ -162,6 +185,8 @@ def predict_image(
     alpha: np.ndarray | None,
     f_px: float,
     device: torch.device,
+    cull_transparent: bool = True,
+    opacity_threshold: float = 1e-3,
 ) -> Gaussians3D:
     """Predict Gaussians from an image.
 
@@ -171,6 +196,8 @@ def predict_image(
         alpha: Optional alpha channel as numpy array (H, W, 1) normalized to [0, 1]
         f_px: Focal length in pixels
         device: Device to run on
+        cull_transparent: Whether to remove splats with low opacity
+        opacity_threshold: Minimum opacity threshold for culling
 
     Returns:
         Predicted 3D Gaussians
@@ -235,5 +262,18 @@ def predict_image(
     gaussians = unproject_gaussians(
         gaussians_ndc, torch.eye(4).to(device), intrinsics_resized, internal_shape
     )
+
+    # Cull transparent splats if requested
+    if cull_transparent:
+        num_splats_before = gaussians.opacities.numel()
+        gaussians = gaussians.filter_by_opacity(min_opacity=opacity_threshold)
+        num_splats_after = gaussians.opacities.numel()
+        num_culled = num_splats_before - num_splats_after
+        if num_culled > 0:
+            LOGGER.info(
+                f"Culled {num_culled:,} transparent splats "
+                f"({100.0 * num_culled / num_splats_before:.1f}%), "
+                f"keeping {num_splats_after:,} visible splats."
+            )
 
     return gaussians

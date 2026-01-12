@@ -42,6 +42,36 @@ class Gaussians3D(NamedTuple):
             opacities=self.opacities.to(device),
         )
 
+    def filter_by_opacity(self, min_opacity: float = 1e-3) -> Gaussians3D:
+        """Filter out Gaussians with opacity below threshold.
+
+        Args:
+            min_opacity: Minimum opacity threshold. Gaussians with opacity below
+                        this value will be removed.
+
+        Returns:
+            Filtered Gaussians3D with only visible splats.
+        """
+        # Create boolean mask for visible splats
+        # opacities shape: (B, N) or (N,)
+        visible_mask = self.opacities > min_opacity
+
+        # Handle batched or unbatched case
+        if visible_mask.dim() == 2:
+            # Batched: (B, N)
+            # For simplicity, apply same filtering to all batches
+            # Take union of visible splats across batches
+            visible_mask = visible_mask.any(dim=0)
+
+        # Index all tensors with the mask
+        return Gaussians3D(
+            mean_vectors=self.mean_vectors[visible_mask],
+            singular_values=self.singular_values[visible_mask],
+            quaternions=self.quaternions[visible_mask],
+            colors=self.colors[visible_mask],
+            opacities=self.opacities[visible_mask],
+        )
+
 
 class SceneMetaData(NamedTuple):
     """Meta data about Gaussian scene."""
