@@ -105,6 +105,7 @@ class RGBGaussianPredictor(nn.Module):
         image: torch.Tensor,
         disparity_factor: torch.Tensor,
         depth: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
     ) -> Gaussians3D:
         """Predict 3D Gaussians.
 
@@ -112,6 +113,8 @@ class RGBGaussianPredictor(nn.Module):
             image: The image to process.
             disparity_factor: Factor to convert depth to disparities.
             depth: Ground truth depth to align predicted depth to.
+            mask: Optional opacity mask (B, 1, H, W) normalized to [0, 1].
+                  Applied to final Gaussian opacities.
 
         Returns:
             The predicted 3D Gaussians.
@@ -188,6 +191,7 @@ class RGBGaussianPredictor(nn.Module):
             delta=delta_values,
             base_values=init_output.gaussian_base_values,
             global_scale=init_output.global_scale,
+            mask=mask,
         )
         return gaussians
 

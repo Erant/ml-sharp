@@ -130,7 +130,7 @@ def predict_cli(
 
     for image_path in image_paths:
         LOGGER.info("Processing %s", image_path)
-        image, _, f_px = io.load_rgb(image_path)
+        image, alpha, _, f_px = io.load_rgba(image_path)
         height, width = image.shape[:2]
         intrinsics = torch.tensor(
             [
@@ -142,7 +142,7 @@ def predict_cli(
             device=device,
             dtype=torch.float32,
         )
-        gaussians = predict_image(gaussian_predictor, image, f_px, torch.device(device))
+        gaussians = predict_image(gaussian_predictor, image, alpha, f_px, torch.device(device))
 
         LOGGER.info("Saving 3DGS to %s", output_path)
         save_ply(gaussians, f_px, (height, width), output_path / f"{image_path.stem}.ply")
@@ -159,11 +159,24 @@ def predict_cli(
 def predict_image(
     predictor: RGBGaussianPredictor,
     image: np.ndarray,
+    alpha: np.ndarray | None,
     f_px: float,
     device: torch.device,
 ) -> Gaussians3D:
-    """Predict Gaussians from an image."""
+    """Predict Gaussians from an image.
+
+    Args:
+        predictor: The Gaussian predictor model
+        image: RGB image as numpy array (H, W, 3)
+        alpha: Optional alpha channel as numpy array (H, W, 1) normalized to [0, 1]
+        f_px: Focal length in pixels
+        device: Device to run on
+
+    Returns:
+        Predicted 3D Gaussians
+    """
     internal_shape = (1536, 1536)
+    stride = 2  # Stride used by initializer to downsample to Gaussian grid
 
     LOGGER.info("Running preprocessing.")
     image_pt = torch.from_numpy(image.copy()).float().to(device).permute(2, 0, 1) / 255.0
@@ -177,9 +190,29 @@ def predict_image(
         align_corners=True,
     )
 
+    # Process alpha mask if present
+    mask_pt = None
+    if alpha is not None:
+        LOGGER.info("Processing alpha mask.")
+        # Convert alpha to torch tensor and resize to internal shape
+        alpha_pt = torch.from_numpy(alpha.copy()).float().to(device).permute(2, 0, 1)
+        alpha_resized_pt = F.interpolate(
+            alpha_pt[None],
+            size=(internal_shape[1], internal_shape[0]),
+            mode="bilinear",
+            align_corners=True,
+        )
+
+        # Downsample to Gaussian grid using avg_pool2d (matches initializer stride)
+        # This maps each 2x2 pixel block to one Gaussian splat
+        mask_pt = F.avg_pool2d(alpha_resized_pt, kernel_size=stride, stride=stride)
+        LOGGER.debug(f"\tMask shape: {mask_pt.shape}")
+    else:
+        LOGGER.info("No alpha mask present, all splats will be opaque.")
+
     # Predict Gaussians in the NDC space.
     LOGGER.info("Running inference.")
-    gaussians_ndc = predictor(image_resized_pt, disparity_factor)
+    gaussians_ndc = predictor(image_resized_pt, disparity_factor, mask=mask_pt)
 
     LOGGER.info("Running postprocessing.")
     intrinsics = (

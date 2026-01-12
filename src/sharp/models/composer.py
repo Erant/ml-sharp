@@ -95,6 +95,7 @@ class GaussianComposer(nn.Module):
         base_values: GaussianBaseValues,
         global_scale: torch.Tensor | None = None,
         flatten_output: bool = True,
+        mask: torch.Tensor | None = None,
     ) -> Gaussians3D:
         """Combine predicted delta values with base gaussian values and apply activation function.
 
@@ -103,6 +104,8 @@ class GaussianComposer(nn.Module):
             base_values: The gaussian base values.
             global_scale: Global scale of Gaussians.
             flatten_output: Flatten the gaussian parameters.
+            mask: Optional opacity mask (B, 1, H, W) normalized to [0, 1].
+                  Multiplied element-wise with final opacities.
 
         Returns:
             The computed 3D Gaussians.
@@ -131,6 +134,13 @@ class GaussianComposer(nn.Module):
         quaternions = self._quaternion_activation(base_values.quaternions, delta[:, 6:10])
         colors = self._color_activation(base_values.colors, delta[:, 10:13])
         opacities = self._opacity_activation(base_values.opacities, delta[:, 13])
+
+        # Apply mask to opacities if provided
+        if mask is not None:
+            # mask shape: (B, 1, H, W)
+            # opacities shape: (B, num_layers, H, W)
+            # Broadcast mask across all layers
+            opacities = opacities * mask
 
         if flatten_output:
             # [B, C, N, H, W] -> [B, N, H, W, C].

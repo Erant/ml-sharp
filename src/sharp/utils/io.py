@@ -30,6 +30,25 @@ def load_rgb(
     path: Path, auto_rotate: bool = True, remove_alpha: bool = True
 ) -> tuple[np.ndarray, list[bytes] | None, float]:
     """Load an RGB image."""
+    img, alpha, icc_profile, f_px = load_rgba(path, auto_rotate)
+
+    if remove_alpha:
+        img = img[:, :, :3]
+
+    return img, icc_profile, f_px
+
+
+def load_rgba(
+    path: Path, auto_rotate: bool = True
+) -> tuple[np.ndarray, np.ndarray | None, list[bytes] | None, float]:
+    """Load an RGB image with optional alpha channel.
+
+    Returns:
+        img: RGB or RGBA image as numpy array
+        alpha: Alpha channel as (H, W, 1) array normalized to [0, 1], or None if no alpha
+        icc_profile: ICC profile bytes or None
+        f_px: Focal length in pixels
+    """
     LOGGER.debug(f"Loading image {path} ...")
 
     if path.suffix.lower() in [".heic"]:
@@ -70,15 +89,19 @@ def load_rgb(
     if img.ndim < 3 or img.shape[2] == 1:
         img = np.dstack((img, img, img))
 
-    if remove_alpha:
+    # Extract alpha channel if present
+    alpha = None
+    if img.shape[2] == 4:
+        alpha = img[:, :, 3:4].astype(np.float32) / 255.0
         img = img[:, :, :3]
+        LOGGER.debug(f"\tAlpha channel detected and extracted")
 
     LOGGER.debug(f"\tHxW: {img.shape[0]}x{img.shape[1]}")
     LOGGER.debug(f"\tfocal length @ 35mm film: {f_35mm}mm")
     f_px = convert_focallength(img.shape[1], img.shape[0], f_35mm)
     LOGGER.debug(f"\tfocal length: {f_px:.2f}px")
 
-    return img, icc_profile, f_px
+    return img, alpha, icc_profile, f_px
 
 
 def extract_exif(img_pil: Image.Image) -> dict[str, Any]:
