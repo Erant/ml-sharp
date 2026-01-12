@@ -73,17 +73,17 @@ def look_at_matrix(eye: torch.Tensor, target: torch.Tensor, up: torch.Tensor) ->
     forward = forward / torch.norm(forward)
 
     # Right vector (X-axis)
-    right = torch.cross(forward, up)
+    right = torch.linalg.cross(forward, up)
     right = right / torch.norm(right)
 
     # Recalculate up vector (Y-axis) - points down in OpenCV
-    up = torch.cross(right, forward)
+    up = torch.linalg.cross(right, forward)
 
     # Build rotation matrix (camera to world)
     rotation = torch.stack([right, up, forward], dim=0)  # 3x3
 
-    # Build view matrix (world to camera)
-    view_matrix = torch.eye(4, dtype=torch.float32)
+    # Build view matrix (world to camera) - use same device as input tensors
+    view_matrix = torch.eye(4, dtype=torch.float32, device=eye.device)
     view_matrix[:3, :3] = rotation
     view_matrix[:3, 3] = -rotation @ eye
 
