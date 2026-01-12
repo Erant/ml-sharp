@@ -23,7 +23,7 @@ LOGGER = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
-def rotation_matrix_x(angle_deg: float) -> torch.Tensor:
+def rotation_matrix_x(angle_deg: float, device: torch.device) -> torch.Tensor:
     """Create rotation matrix around X-axis (pitch - up/down tilt)."""
     theta = math.radians(angle_deg)
     c, s = math.cos(theta), math.sin(theta)
@@ -32,10 +32,10 @@ def rotation_matrix_x(angle_deg: float) -> torch.Tensor:
         [0, c, -s, 0],
         [0, s, c, 0],
         [0, 0, 0, 1],
-    ], dtype=torch.float32)
+    ], dtype=torch.float32, device=device)
 
 
-def rotation_matrix_y(angle_deg: float) -> torch.Tensor:
+def rotation_matrix_y(angle_deg: float, device: torch.device) -> torch.Tensor:
     """Create rotation matrix around Y-axis (yaw - horizontal rotation)."""
     theta = math.radians(angle_deg)
     c, s = math.cos(theta), math.sin(theta)
@@ -44,17 +44,17 @@ def rotation_matrix_y(angle_deg: float) -> torch.Tensor:
         [0, 1, 0, 0],
         [-s, 0, c, 0],
         [0, 0, 0, 1],
-    ], dtype=torch.float32)
+    ], dtype=torch.float32, device=device)
 
 
-def translation_matrix(tx: float, ty: float, tz: float) -> torch.Tensor:
+def translation_matrix(tx: float, ty: float, tz: float, device: torch.device) -> torch.Tensor:
     """Create translation matrix."""
     return torch.tensor([
         [1, 0, 0, tx],
         [0, 1, 0, ty],
         [0, 0, 1, tz],
         [0, 0, 0, 1],
-    ], dtype=torch.float32)
+    ], dtype=torch.float32, device=device)
 
 
 def look_at_matrix(eye: torch.Tensor, target: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
@@ -183,15 +183,15 @@ def main(
 
     # Apply rotations around center of mass
     # 1. Translate center to origin
-    T_to_origin = translation_matrix(-center_of_mass[0].item(), -center_of_mass[1].item(), -center_of_mass[2].item())
+    T_to_origin = translation_matrix(-center_of_mass[0].item(), -center_of_mass[1].item(), -center_of_mass[2].item(), device_obj)
 
     # 2. Apply rotations (Y first for horizontal orbit, then X for vertical)
-    R_y = rotation_matrix_y(rotate_y)
-    R_x = rotation_matrix_x(rotate_x)
+    R_y = rotation_matrix_y(rotate_y, device_obj)
+    R_x = rotation_matrix_x(rotate_x, device_obj)
     R = R_x @ R_y
 
     # 3. Translate back
-    T_from_origin = translation_matrix(center_of_mass[0].item(), center_of_mass[1].item(), center_of_mass[2].item())
+    T_from_origin = translation_matrix(center_of_mass[0].item(), center_of_mass[1].item(), center_of_mass[2].item(), device_obj)
 
     # 4. Compute new camera position after rotation
     rotation_transform = T_from_origin @ R @ T_to_origin
