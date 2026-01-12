@@ -53,24 +53,40 @@ class Gaussians3D(NamedTuple):
             Filtered Gaussians3D with only visible splats.
         """
         # Create boolean mask for visible splats
-        # opacities shape: (B, N) or (N,)
         visible_mask = self.opacities > min_opacity
 
-        # Handle batched or unbatched case
+        # Handle different tensor shapes
         if visible_mask.dim() == 2:
-            # Batched: (B, N)
-            # For simplicity, apply same filtering to all batches
-            # Take union of visible splats across batches
-            visible_mask = visible_mask.any(dim=0)
-
-        # Index all tensors with the mask
-        return Gaussians3D(
-            mean_vectors=self.mean_vectors[visible_mask],
-            singular_values=self.singular_values[visible_mask],
-            quaternions=self.quaternions[visible_mask],
-            colors=self.colors[visible_mask],
-            opacities=self.opacities[visible_mask],
-        )
+            # Batched case: (B, N)
+            # For inference with batch_size=1, squeeze and filter
+            if visible_mask.shape[0] == 1:
+                visible_mask = visible_mask.squeeze(0)  # (N,)
+                return Gaussians3D(
+                    mean_vectors=self.mean_vectors.squeeze(0)[visible_mask],
+                    singular_values=self.singular_values.squeeze(0)[visible_mask],
+                    quaternions=self.quaternions.squeeze(0)[visible_mask],
+                    colors=self.colors.squeeze(0)[visible_mask],
+                    opacities=self.opacities.squeeze(0)[visible_mask],
+                )
+            else:
+                # Multiple batches: take union across batches
+                visible_mask = visible_mask.any(dim=0)
+                return Gaussians3D(
+                    mean_vectors=self.mean_vectors[:, visible_mask],
+                    singular_values=self.singular_values[:, visible_mask],
+                    quaternions=self.quaternions[:, visible_mask],
+                    colors=self.colors[:, visible_mask],
+                    opacities=self.opacities[:, visible_mask],
+                )
+        else:
+            # Unbatched case: (N,)
+            return Gaussians3D(
+                mean_vectors=self.mean_vectors[visible_mask],
+                singular_values=self.singular_values[visible_mask],
+                quaternions=self.quaternions[visible_mask],
+                colors=self.colors[visible_mask],
+                opacities=self.opacities[visible_mask],
+            )
 
 
 class SceneMetaData(NamedTuple):
