@@ -50,7 +50,7 @@ class Gaussians3D(NamedTuple):
                         this value will be removed.
 
         Returns:
-            Filtered Gaussians3D with only visible splats.
+            Filtered Gaussians3D with only visible splats, preserving batch dimension.
         """
         # Create boolean mask for visible splats
         visible_mask = self.opacities > min_opacity
@@ -58,15 +58,16 @@ class Gaussians3D(NamedTuple):
         # Handle different tensor shapes
         if visible_mask.dim() == 2:
             # Batched case: (B, N)
-            # For inference with batch_size=1, squeeze and filter
+            # For inference with batch_size=1, keep batch dim but filter along N
             if visible_mask.shape[0] == 1:
-                visible_mask = visible_mask.squeeze(0)  # (N,)
+                mask_1d = visible_mask.squeeze(0)  # (N,)
+                # Index along dimension 1 and keep batch dimension
                 return Gaussians3D(
-                    mean_vectors=self.mean_vectors.squeeze(0)[visible_mask],
-                    singular_values=self.singular_values.squeeze(0)[visible_mask],
-                    quaternions=self.quaternions.squeeze(0)[visible_mask],
-                    colors=self.colors.squeeze(0)[visible_mask],
-                    opacities=self.opacities.squeeze(0)[visible_mask],
+                    mean_vectors=self.mean_vectors[:, mask_1d],  # (1, N_filtered, 3)
+                    singular_values=self.singular_values[:, mask_1d],  # (1, N_filtered, 3)
+                    quaternions=self.quaternions[:, mask_1d],  # (1, N_filtered, 4)
+                    colors=self.colors[:, mask_1d],  # (1, N_filtered, 3)
+                    opacities=self.opacities[:, mask_1d],  # (1, N_filtered)
                 )
             else:
                 # Multiple batches: take union across batches
